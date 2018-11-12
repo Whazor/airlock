@@ -1,7 +1,8 @@
 package com.ing.wbaa.airlock.proxy.api.directive
 
-import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{ HttpHeader, HttpRequest }
+import akka.http.scaladsl.model.HttpHeader.ParsingResult
+import akka.http.scaladsl.model.headers.{RawHeader, `X-Forwarded-For`}
+import akka.http.scaladsl.model.{HttpHeader, HttpRequest, RemoteAddress}
 import akka.http.scaladsl.server.Directive1
 import com.ing.wbaa.airlock.proxy.data._
 import com.typesafe.scalalogging.LazyLogging
@@ -93,5 +94,23 @@ object ProxyDirectives extends LazyLogging {
         }
       }
     }
+
+  /**
+   * Extract the list of IPs in the X-Forwarded-For header.
+   */
+  val extractForwardedForIPs: Directive1[Seq[RemoteAddress]] =
+    headerValuePF({
+      case `X-Forwarded-For`(addresses) => addresses
+      case header if header.lowercaseName() == X_FORWARDED_FOR_HEADER.toLowerCase =>
+        // For some reason Akka does not parse the X-Forwarded-For header
+        // This hack forces the parsing when the header is encountered
+        HttpHeader.parse(header.name, header.value) match {
+          case ParsingResult.Ok(`X-Forwarded-For`(addresses), _) => addresses
+          case _ =>
+            logger.warn(s"Unable to parse header ${header}")
+            Nil
+        }
+    }) |
+      provide(Nil)
 }
 
